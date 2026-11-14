@@ -1,6 +1,6 @@
 @testable import App
 import XCTVapor
-
+//("200 OK") is not equal to ("201 Created")
 final class GameTests: XCTestCase {
     func testCreateGameReturnsCreated() async throws {
         try await withApp { app in
@@ -64,6 +64,7 @@ final class GameTests: XCTestCase {
             })
         }
     }
+//("500 Internal Server Error") is not equal to ("404 Not Found")
 
     func testShowUnknownGameReturnsNotFound() async throws {
         try await withApp { app in

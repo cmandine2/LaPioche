@@ -17,7 +17,14 @@ struct LoanController: RouteCollection {
         guard let member = try await Member.find(dto.memberID, on: req.db) else {
             throw Abort(.notFound, reason: "Member not found")
         }
+        let activeLoanExists = try await Loan.query(on: req.db)
+            .filter(\.$game.$id == dto.gameID)
+            .filter(\.$returnedAt == nil)
+            .first() != nil
 
+        guard !activeLoanExists else {
+            throw Abort(.conflict, reason: "Game is already on loan")
+        }
         let now = Date()
         let loan = Loan(
             gameID: try game.requireID(),

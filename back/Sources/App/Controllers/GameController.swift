@@ -7,6 +7,8 @@ struct GameController: RouteCollection {
         games.get(use: index)
         games.post(use: create)
         games.get(":gameID", use: show)
+        games.put(":gameID", use: update)
+        games.delete(":gameID", use: delete)
     }
 
     @Sendable
@@ -24,8 +26,11 @@ struct GameController: RouteCollection {
         try dto.ensureConsistentPlayerCount()
 
         let game = dto.toModel()
-        try await game.save(on: req.db)
-        return try await game.toDTO().encodeResponse(for: req)
+        try await game.create(on: req.db)
+        return try await game.toDTO().encodeResponse(
+            status: .created,
+            for: req
+        )
     }
 
     @Sendable
@@ -42,8 +47,40 @@ struct GameController: RouteCollection {
             .with(\.$loans)
             .first()
         else {
-            throw Abort(.internalServerError, reason: "Game not found")
+            throw Abort(.notFound, reason: "Game not found")
         }
         return game
+    }
+
+    @Sendable
+    func update(req: Request) async throws -> GameDTO {
+        let game = try await findGame(req)
+        
+        try CreateGameDTO.validate(content: req)
+        
+        let dto = try req.content.decode(CreateGameDTO.self)
+        
+        try dto.ensureConsistentPlayerCount()
+        
+        game.title = dto.title
+        game.minPlayers = dto.minPlayers
+        game.maxPlayers = dto.maxPlayers
+        game.durationMinutes = dto.durationMinutes
+        
+        try await game.update(on: req.db)
+        
+        return game.toDTO()
+    }
+    
+    func delete(req: Request) async throws -> Response {
+        let game = try await findGame(req)
+        
+        guard game.loans.isEmpty else {
+            throw Abort(.conflict, reason:"game has loans")
+        }
+        
+        try await game.delete(on: req.db)
+        
+        return Response(status:.noContent)
     }
 }

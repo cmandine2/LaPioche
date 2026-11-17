@@ -103,9 +103,22 @@ function gameCard(game) {
     : el("span", { class: "badge busy" }, "Emprunté");
 
   const actions = el("div", { class: "actions" });
-  if (game.isAvailable) {
-    actions.append(button("Emprunter", () => openBorrowDialog(game), "primary"));
-  }
+    if (game.isAvailable) {
+      actions.append(
+        button("Emprunter", () => openBorrowDialog(game), "primary")
+      );
+    } else {
+        actions.append(
+              button("Rendre", () => returnGame(game), "primary")
+            );
+          }
+    actions.append(
+      button("Modifier", () => openEditDialog(game))
+    );
+    
+    actions.append(
+        button("Supprimer", () => deleteGame(game))
+    );
 
   return el(
     "li",
@@ -133,6 +146,60 @@ bindSubmit(gameDialog, gameForm, (data) =>
     durationMinutes: Number(data.get("durationMinutes")),
   }),
 );
+
+async function returnGame(game) {
+  await run(async () => {
+    await api.returnLoanByGameId(game.id);
+    toast("Le jeu a bien été rendu.");
+    await loadGames();
+  });
+}
+
+// --- Modifier --------------------------------------------------------------
+
+const editGameDialog = $("#edit-game-dialog");
+const editGameForm = $("#edit-game-form");
+
+let editingGame = null;
+
+function openEditDialog(game) {
+  editingGame = game;
+
+  editGameForm.elements.title.value = game.title;
+  editGameForm.elements.minPlayers.value = game.minPlayers;
+  editGameForm.elements.maxPlayers.value = game.maxPlayers;
+  editGameForm.elements.durationMinutes.value = game.durationMinutes;
+
+  showFormError(editGameDialog, null);
+  editGameDialog.showModal();
+}
+
+bindSubmit(editGameDialog, editGameForm, (data) =>
+  api.updateGame(editingGame.id, {
+    title: data.get("title").trim(),
+    minPlayers: Number(data.get("minPlayers")),
+    maxPlayers: Number(data.get("maxPlayers")),
+    durationMinutes: Number(data.get("durationMinutes")),
+  }),
+);
+
+// --- Supprimer jeu--------------------------------------------------------------
+
+async function deleteGame(game) {
+  const confirmed = confirm(
+    `Voulez-vous vraiment supprimer le jeu "${game.title}" ?`
+  );
+
+  if (!confirmed) return;
+
+  await run(async () => {
+    await api.deleteGame(game.id);
+
+    toast(`Le jeu "${game.title}" a été supprimé.`);
+
+    await loadGames();
+  });
+}
 
 // --- Emprunts --------------------------------------------------------------
 
@@ -171,24 +238,75 @@ async function loadMembers() {
 }
 
 function memberRow(member) {
-  return el(
-    "li",
-    { class: "row" },
-    el("div", { class: "row-main" }, el("p", {}, el("strong", {}, member.name)), el("p", { class: "meta" }, member.email)),
-  );
+    const actions = el("div", { class: "actions" });
+    
+    actions.append(
+                   button("Modifier", () => openEditMemberDialog(member))
+                   );
+    
+    actions.append(
+                   button("Supprimer", () => deleteMember(member))
+                   );
+    
+    return el(
+              "li",
+              { class: "row" },
+              el("div", { class: "row-main" }, el("p", {}, el("strong", {}, member.name)), el("p", { class: "meta" }, member.email)),
+              actions
+              );
 }
 
 const memberDialog = $("#member-dialog");
 const memberForm = $("#member-form");
 
 $("#add-member").addEventListener("click", () => {
-  memberForm.reset();
-  showFormError(memberDialog, null);
-  memberDialog.showModal();
+    memberForm.reset();
+    showFormError(memberDialog, null);
+    memberDialog.showModal();
 });
 
 bindSubmit(memberDialog, memberForm, (data) =>
-  api.createMember({ name: data.get("name").trim(), email: data.get("email").trim() }),
-);
+           api.createMember({ name: data.get("name").trim(), email: data.get("email").trim() }),
+           );
 
 refresh();
+
+const editMemberDialog = $("#edit-member-dialog");
+const editMemberForm = $("#edit-member-form");
+
+let editingMember = null;
+
+function openEditMemberDialog(member) {
+  editingMember = member;
+
+  editMemberForm.elements.name.value = member.name;
+  editMemberForm.elements.email.value = member.email;
+
+  showFormError(editMemberDialog, null);
+  editMemberDialog.showModal();
+}
+
+bindSubmit(editMemberDialog, editMemberForm, (data) =>
+  api.updateMember(editingMember.id, {
+    name: data.get("name").trim(),
+    email: data.get("email").trim(),
+  }),
+);
+
+// --- supprime membre -----------------------------------------------------------
+
+async function deleteMember(member) {
+  const confirmed = confirm(
+    `Voulez-vous vraiment supprimer l'adhérent·e "${member.name}" ?`
+  );
+
+  if (!confirmed) return;
+
+  await run(async () => {
+    await api.deleteMember(member.id);
+
+    toast(`L'adhérent·e "${member.name}" a été supprimé·e.`);
+
+    await loadMembers();
+  });
+}

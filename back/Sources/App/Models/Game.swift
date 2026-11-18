@@ -21,7 +21,8 @@ final class Game: Model, @unchecked Sendable {
 
     @Children(for: \.$game)
     var loans: [Loan]
-
+    
+   
     init() {}
 
     init(id: UUID? = nil, title: String, minPlayers: Int, maxPlayers: Int, durationMinutes: Int) {

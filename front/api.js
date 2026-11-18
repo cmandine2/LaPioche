@@ -32,9 +32,9 @@ const knownMessages = {
   "Invalid game id": "L'identifiant du jeu n'est pas valide.",
   "Invalid member id": "L'identifiant de l'adhérent·e n'est pas valide.",
   "Invalid loan id": "L'identifiant de l'emprunt n'est pas valide.",
-  "Game is already on loan": "Ce jeu est déjà emprunté : il faut d'abord le rendre.",
+  "Game already on loan": "Ce jeu est déjà emprunté : il faut d'abord le rendre.",
   "Loan is already returned": "Cet emprunt a déjà été rendu.",
-  "A game with loans cannot be deleted":
+  "Game has loan history":
     "Suppression impossible : ce jeu a un historique d'emprunts, conservé même quand le jeu est rendu.",
   "A member with loans cannot be deleted":
     "Suppression impossible : cet·te adhérent·e a un historique d'emprunts, conservé même quand tout est rendu.",
@@ -89,7 +89,12 @@ async function request(method, path, body) {
   try {
     response = await fetch(`${API_URL}${path}`, {
       method,
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(sessionStorage.getItem("token")
+          ? { Authorization: `Bearer ${sessionStorage.getItem("token")}` }
+          : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
@@ -107,11 +112,33 @@ async function request(method, path, body) {
 }
 
 export const api = {
-  listGames: () => request("GET", "/games"),
+  // BONUS-01 : Authentification
+  login: (email, password) =>
+    request("POST", "/auth/login", { email, password }),
+  register: (email, password) =>
+    request("POST", "/auth/register", { email, password }),
+  // FEAT-06 : Récupérer tous les jeux ou rechercher par titre.
+  listGames: (search = "") =>
+    request("GET", search
+      ? `/games?search=${encodeURIComponent(search)}`
+      : "/games"),
   createGame: (game) => request("POST", "/games", game),
-
+  // FEAT-01 : Modifier un jeu.
+  updateGame: (id, game) => request("PUT", `/games/${id}`, game),
+  // FEAT-01 : Supprimer un jeu.
+  deleteGame: (id) => request("DELETE", `/games/${id}`),
   listMembers: () => request("GET", "/members"),
   createMember: (member) => request("POST", "/members", member),
-
+  // FEAT-02 : Modifier un adhérent.
+  updateMember: (id, member) => request("PUT", `/members/${id}`, member),
+  // FEAT-02 : Supprimer un adhérent.
+  deleteMember: (id) => request("DELETE", `/members/${id}`),
+  // FEAT-04 : Historique des emprunts d'un adhérent.
+  listMemberLoans: (id) => request("GET", `/members/${id}/loans`),
+  // EXTRA-01 : Récupérer l'historique des emprunts.
+  listLoans: () => request("GET", "/loans"),
   borrow: (gameID, memberID) => request("POST", "/loans", { gameID, memberID }),
+  returnLoan: (loanID) => request("POST", `/loans/${loanID}/return`),
+  // FEAT-05 : Récupérer uniquement les emprunts en retard.
+  listOverdueLoans: () => request("GET", "/loans/overdue"),
 };

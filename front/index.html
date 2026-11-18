@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>La Pioche - Ludothèque</title>
+  <!-- Bootstrap 5 via CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet">
+  <!--  CSS personnalisé -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,17 +16,83 @@
     <nav aria-label="Sections">
       <a href="#games" data-tab="games">Jeux</a>
       <a href="#members" data-tab="members">Adhérent·es</a>
+      <!-- FEAT-05 : Compteur des emprunts en retard. -->
+      <a href="#loans" data-tab="loans">
+        Historique <span id="overdue-count" hidden></span>
+      </a>
     </nav>
     <a class="docs-link" id="docs-link" href="http://localhost:8081/">Documentation API</a>
+    <div id="auth-actions" class="d-flex gap-2 align-items-center">
+      <button type="button" id="login-button" class="btn btn-outline-primary">
+        Connexion
+      </button>
+      <button type="button" id="register-button" class="btn btn-primary">
+        Inscription
+      </button>
+      <button type="button" id="logout-button" class="btn btn-outline-danger" hidden>
+        Déconnexion
+      </button>
+    </div>
   </header>
 
   <main>
+
+    <!-- Accueil public -->
+    <section id="home" class="home">
+      <h2>Bienvenue sur La Pioche</h2>
+      <p>Votre ludothèque, simplement.</p>
+      <p>Gérez vos jeux, vos adhérents et vos emprunts depuis une seule application.</p>
+
+      <div class="home-cards">
+        <article class="card">
+          <h3>Jeux</h3>
+          <p>Consultez et gérez le catalogue des jeux.</p>
+        </article>
+
+        <article class="card">
+          <h3>Adhérents</h3>
+          <p>Retrouvez les membres de la ludothèque.</p>
+        </article>
+
+        <article class="card">
+          <h3>Emprunts</h3>
+          <p>Suivez les emprunts et les retours des jeux.</p>
+        </article>
+      </div>
+
+      <p>
+        Connectez-vous ou inscrivez-vous pour accéder aux jeux,
+        aux adhérents et à l'historique des emprunts.
+      </p>
+    </section>
+
+    <!-- Liste des jeux -->
     <section id="games" class="tab" hidden>
       <div class="section-head">
         <h2>Jeux</h2>
         <button type="button" id="add-game" class="primary">Ajouter un jeu</button>
       </div>
-      <p id="games-empty" class="empty" hidden>La ludothèque ne contient aucun jeu pour le moment. Cliquez sur « Ajouter un jeu » pour créer le premier.</p>
+
+      <!-- FEAT-06 : Rechercher un jeu par titre. -->
+      <input
+        type="search"
+        id="search-games"
+        class="form-control"
+        placeholder="Rechercher un jeu par titre..."
+        aria-label="Rechercher un jeu par titre"
+      />
+      
+      <!-- FEAT-07 : Filtrer les jeux disponibles. -->
+      <label>
+        <input type="checkbox" id="available-only" />
+        Jeux disponibles uniquement
+      </label>
+
+      <p id="games-empty" class="empty" hidden>
+        La ludothèque ne contient aucun jeu pour le moment.
+        Cliquez sur « Ajouter un jeu » pour créer le premier.
+      </p>
+
       <ul id="games-list" class="cards"></ul>
     </section>
 
@@ -34,18 +104,125 @@
       <p id="members-empty" class="empty" hidden>Aucun·e adhérent·e pour le moment. Cliquez sur « Ajouter un·e adhérent·e » pour créer le premier ou la première.</p>
       <ul id="members-list" class="rows"></ul>
     </section>
+    <!-- EXTRA-01 : Afficher l'historique des emprunts. -->
+    <section id="loans" class="tab" hidden>
+      <div class="section-head">
+        <h2 id="loans-title">Historique des emprunts</h2>
+        <!-- FEAT-05 : Filtrer les emprunts en retard. -->
+        <div class="actions">
+          <button id="overdue-loans" type="button">
+            Emprunts en retard
+          </button>
+          <button id="all-loans" type="button" hidden>
+            Tous les emprunts
+          </button>
+        </div>
+      </div>
+      <p id="loans-empty" class="empty" hidden>
+        Aucun emprunt enregistré pour le moment.
+      </p>
+
+      <ul id="loans-list" class="rows"></ul>
+    </section>
   </main>
+
+  <!-- BONUS-01 : Formulaire d'inscription -->
+  <dialog id="register-dialog">
+    <form id="register-form" novalidate>
+      <h2>Inscription</h2>
+
+      <label>
+        Adresse e-mail
+        <input
+          type="email"
+          name="email"
+          class="form-control"
+          required
+        >
+      </label>
+
+      <label>
+        Mot de passe (8 caractères minimum)
+        <input
+          type="password"
+          name="password"
+          class="form-control"
+          minlength="8"
+          required
+        >
+      </label>
+
+      <p class="form-error" role="alert" hidden></p>
+
+      <div class="actions">
+        <button type="button" data-cancel>Annuler</button>
+        <button type="submit" class="primary">S'inscrire</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- BONUS-01 : Formulaire de connexion -->
+  <dialog id="login-dialog">
+    <form id="login-form" novalidate>
+      <h2>Connexion</h2>
+
+      <label>
+        Adresse e-mail
+        <input
+          type="email"
+          name="email"
+          class="form-control"
+          required
+        >
+      </label>
+
+      <label>
+        Mot de passe
+        <input
+          type="password"
+          name="password"
+          class="form-control"
+          required
+        >
+      </label>
+
+      <p class="form-error" role="alert" hidden></p>
+
+      <div class="actions">
+        <button type="button" data-cancel>Annuler</button>
+        <button type="submit" class="primary">Se connecter</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="game-dialog">
     <form method="dialog" id="game-form" novalidate>
-      <h2>Ajouter un jeu</h2>
-      <label>Titre <input name="title" required></label>
+      <h2 id="game-dialog-title">Ajouter un jeu</h2>
+
+      <label>
+        Titre
+        <input class="form-control" name="title" required>
+      </label>
+
       <div class="pair">
-        <label>Joueur·ses min <input type="number" name="minPlayers" min="1" step="1" required></label>
-        <label>Joueur·ses max <input type="number" name="maxPlayers" min="1" step="1" required></label>
+        <label>
+          Joueur·ses min
+          <input class="form-control" type="number" name="minPlayers" min="1" step="1" required>
+        </label>
+
+        <label>
+          Joueur·ses max
+          <input class="form-control" type="number" name="maxPlayers" min="1" step="1" required>
+        </label>
       </div>
-      <label>Durée (minutes) <input type="number" name="durationMinutes" min="1" step="1" required></label>
+
+      <label>
+        Durée (minutes)
+        <input class="form-control" type="number" name="durationMinutes" min="1" step="1" required>
+      </label>
+
       <p class="form-error" role="alert" hidden></p>
+
       <div class="actions">
         <button type="button" data-cancel>Annuler</button>
         <button type="submit" class="primary">Enregistrer</button>
@@ -53,11 +230,18 @@
     </form>
   </dialog>
 
+
   <dialog id="member-dialog">
     <form method="dialog" id="member-form" novalidate>
-      <h2>Ajouter un·e adhérent·e</h2>
-      <label>Nom <input name="name" required></label>
-      <label>Adresse e-mail <input type="email" name="email" required></label>
+      <h2 id="member-dialog-title">Ajouter un·e adhérent·e</h2>
+      <label>
+        Nom
+        <input class="form-control" name="name" required>
+      </label>
+      <label>
+        Adresse e-mail
+        <input class="form-control" type="email" name="email" required>
+      </label>
       <p class="form-error" role="alert" hidden></p>
       <div class="actions">
         <button type="button" data-cancel>Annuler</button>
@@ -69,8 +253,9 @@
   <dialog id="borrow-dialog">
     <form method="dialog" id="borrow-form">
       <h2 id="borrow-dialog-title"></h2>
-      <label>Adhérent·e
-        <select name="memberID" required></select>
+      <label>
+        Adhérent·e
+        <select class="form-select" name="memberID" required></select>
       </label>
       <p class="hint">Retour prévu dans 14 jours.</p>
       <p class="form-error" role="alert" hidden></p>

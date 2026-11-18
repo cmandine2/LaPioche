@@ -8,7 +8,9 @@ final class LoanTests: XCTestCase {
         memberID: UUID,
         afterResponse: (XCTHTTPResponse) async throws -> Void
     ) async throws {
+        let token = try await getTestToken(app)
         try await app.test(.POST, "loans", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: token)
             try req.content.encode(CreateLoanDTO(gameID: gameID, memberID: memberID))
         }, afterResponse: afterResponse)
     }
@@ -55,7 +57,10 @@ final class LoanTests: XCTestCase {
 
             try await borrow(app, gameID: gameID, memberID: try XCTUnwrap(member.id)) { _ in }
 
-            try await app.test(.GET, "games/\(gameID)", afterResponse: { res async throws in
+            let token = try await getTestToken(app)
+            try await app.test(.GET, "games/\(gameID)", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: token)
+            }, afterResponse: { res async throws in
                 XCTAssertFalse(try res.content.decode(GameDTO.self).isAvailable)
             })
         }
@@ -94,4 +99,123 @@ final class LoanTests: XCTestCase {
             }
         }
     }
+
+    // FEAT-03 : Vérifier qu'un jeu redevient disponible après son retour.
+    func testReturnedGameBecomesAvailable() async throws {
+        try await withApp { app in
+            let game = try await createGame(app)
+            let member = try await createMember(app)
+            let gameID = try XCTUnwrap(game.id)
+
+            var loanID: UUID?
+
+            try await borrow(
+                app,
+                gameID: gameID,
+                memberID: try XCTUnwrap(member.id)
+            ) { res in
+                let loan = try res.content.decode(LoanDTO.self)
+                loanID = loan.id
+            }
+
+            let id = try XCTUnwrap(loanID)
+
+            let token = try await getTestToken(app)
+            try await app.test(.POST, "loans/\(id)/return", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: token)
+            }, afterResponse: { res async throws in
+                XCTAssertEqual(res.status, .ok)
+                let loan = try res.content.decode(LoanDTO.self)
+                XCTAssertNotNil(loan.returnedAt)
+            })
+
+            try await app.test(.GET, "games/\(gameID)", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: token)
+            }, afterResponse: { res async throws in
+                let game = try res.content.decode(GameDTO.self)
+                XCTAssertTrue(game.isAvailable)
+                XCTAssertNil(game.activeLoanID)
+            })
+        }
+    }
+
+    // EXTRA-01 : Vérifier que l'historique contient les emprunts du plus récent au plus ancien.
+    func testLoanHistoryReturnsNewestFirst() async throws {
+        try await withApp { app in
+            let game1 = try await createGame(app)
+            let game2 = try await createGame(app)
+            let member = try await createMember(app)
+
+            let gameID1 = try XCTUnwrap(game1.id)
+            let gameID2 = try XCTUnwrap(game2.id)
+            let memberID = try XCTUnwrap(member.id)
+
+            try await borrow(app, gameID: gameID1, memberID: memberID) { _ in }
+            try await borrow(app, gameID: gameID2, memberID: memberID) { _ in }
+
+            let loans = try await Loan.query(on: app.db).all()
+
+            for loan in loans {
+                loan.borrowedAt = loan.$game.id == gameID1
+                    ? Date(timeIntervalSince1970: 1_700_000_000)
+                    : Date(timeIntervalSince1970: 1_700_086_400)
+
+                try await loan.save(on: app.db)
+            }
+
+            let token = try await getTestToken(app)
+            try await app.test(.GET, "loans", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: token)
+            }, afterResponse: { res async throws in
+                XCTAssertEqual(res.status, .ok)
+
+                let history = try res.content.decode([LoanDTO].self)
+
+                XCTAssertEqual(history.count, 2)
+                XCTAssertEqual(history[0].gameID, gameID2)
+                XCTAssertEqual(history[1].gameID, gameID1)
+            })
+        }
+    }
+
+    // FEAT-05 : Vérifier que seuls les emprunts en retard et non rendus sont retournés.
+    func testOverdueLoans() async throws {
+        try await withApp { app in
+            let game1 = try await createGame(app)
+            let game2 = try await createGame(app)
+            let game3 = try await createGame(app)
+            let member = try await createMember(app)
+            let memberID = try XCTUnwrap(member.id)
+            for game in [game1, game2, game3] {
+                try await borrow(
+                    app,
+                    gameID: try XCTUnwrap(game.id),
+                    memberID: memberID
+                ) { _ in }
+            }
+            let loans = try await Loan.query(on: app.db).all()
+            for loan in loans {
+                if loan.$game.id == game1.id {
+                    loan.dueAt = Date().addingTimeInterval(-86_400)
+                } else if loan.$game.id == game2.id {
+                    loan.dueAt = Date().addingTimeInterval(86_400)
+                } else {
+                    loan.dueAt = Date().addingTimeInterval(-86_400)
+                    loan.returnedAt = Date()
+                }
+                try await loan.save(on: app.db)
+            }
+            let token = try await getTestToken(app)
+            try await app.test(.GET, "loans/overdue", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: token)
+            }, afterResponse: { res async throws in
+                XCTAssertEqual(res.status, .ok)
+                let overdue = try res.content.decode([LoanDTO].self)
+                XCTAssertEqual(overdue.count, 1)
+                XCTAssertEqual(overdue[0].gameID, game1.id)
+                XCTAssertNil(overdue[0].returnedAt)
+            })
+        }
+    }
+
 }

@@ -65,6 +65,23 @@ test("a validation error is shown in French and the dialog stays open", async ()
   assertTrue(app.$("#game-dialog").open, "la boîte devrait rester ouverte");
 });
 
+// FEAT-07 : Afficher uniquement les jeux disponibles.
+test("available-only filter hides borrowed games", async () => {
+  const app = await mountApp({
+    "GET /games": [catan, dixit],
+  });
+  await waitFor(() => app.$$("#games-list .card").length === 2);
+  const checkbox = app.$("#available-only");
+  checkbox.checked = true;
+  checkbox.dispatchEvent(new Event("change"));
+  await waitFor(() => app.$$("#games-list .card").length === 1);
+  assertTrue(!!cardOf(app, "Catan"));
+  assertTrue(!cardOf(app, "Dixit"));
+  checkbox.checked = false;
+  checkbox.dispatchEvent(new Event("change"));
+  await waitFor(() => app.$$("#games-list .card").length === 2);
+});
+
 // --- Emprunts
 
 test("borrowing a game sends the game and the chosen member", async () => {
@@ -88,6 +105,33 @@ test("borrowing without any member explains that one must be added first", async
   app.click("Emprunter", cardOf(app, "Catan"));
   await waitFor(() => app.$("#toasts").textContent.includes("Ajoutez d'abord"), "le message d'aide");
   assertTrue(!app.$("#borrow-dialog").open, "la boîte d'emprunt ne doit pas s'ouvrir");
+});
+
+// FEAT-03 : Rendre un jeu emprunté et vérifier sa disponibilité.
+test("returning a game makes it available again", async () => {
+  const borrowedGame = { ...dixit, activeLoanID: "l1" };
+
+  const app = await mountApp({
+    "GET /games": [borrowedGame],
+    "POST /loans/l1/return": [200, {
+      id: "l1",
+      returnedAt: new Date().toISOString(),
+    }],
+  });
+
+  await waitFor(() => app.$$("#games-list .card").length === 1);
+  assertIncludes(cardOf(app, "Dixit").textContent, "Rendre");
+  app.click("Rendre", cardOf(app, "Dixit"));
+  await waitFor(
+    () => app.calls.some(
+      (call) => call.method === "POST" && call.path === "/loans/l1/return"
+    ),
+    "l'appel POST /loans/l1/return"
+  );
+  await waitFor(
+    () => app.$("#toasts").textContent.includes("a bien été rendu"),
+    "le message de retour"
+  );
 });
 
 // --- Adhérent·es
@@ -127,4 +171,99 @@ test("an email already in use is shown in French", async () => {
   app.$("#member-form").requestSubmit();
   await waitFor(() => !app.$("#member-dialog .form-error").hidden, "le message d'erreur");
   assertIncludes(app.$("#member-dialog .form-error").textContent, "utilise déjà cette adresse e-mail");
+});
+
+// --- Historique des emprunts -----------------------------------------------
+
+// EXTRA-01 : Vérifier l'affichage de l'historique des emprunts.
+test("loan history shows game, member, dates and return status", async () => {
+  const loan = {
+    id: "l1",
+    gameID: "g1",
+    memberID: "m1",
+    borrowedAt: "2026-11-12T14:30:11Z",
+    dueAt: "2026-11-26T14:30:11Z",
+    returnedAt: "2026-11-12T17:26:44Z",
+  };
+
+  const app = await mountApp(
+    {
+      "GET /loans": [loan],
+      "GET /games": [catan],
+      "GET /members": [camille],
+    },
+    { hash: "#loans" },
+  );
+
+  await waitFor(
+    () => app.$$("#loans-list .row").length === 1,
+    "l'historique des emprunts",
+  );
+
+  const history = app.$("#loans-list").textContent;
+
+  assertIncludes(history, "Catan");
+  assertIncludes(history, "Camille");
+  assertIncludes(history, "Emprunté le 12 novembre 2026");
+  assertIncludes(history, "Retour prévu le 26 novembre 2026");
+  assertIncludes(history, "Rendu le 12 novembre 2026");
+});
+
+// --- Gestion des retards ---------------------------------------------------
+
+// FEAT-05 : Vérifier qu'un emprunt non rendu et dépassé affiche "En retard".
+test("an overdue loan shows En retard", async () => {
+  const loan = {
+    id: "l2",
+    gameID: "g1",
+    memberID: "m1",
+    borrowedAt: "2020-01-01T10:00:00Z",
+    dueAt: "2020-01-15T10:00:00Z",
+    returnedAt: null,
+  };
+
+  const app = await mountApp(
+    {
+      "GET /loans": [loan],
+      "GET /games": [catan],
+      "GET /members": [camille],
+    },
+    { hash: "#loans" },
+  );
+
+  await waitFor(
+    () => app.$$("#loans-list .row").length === 1,
+    "l'affichage de l'emprunt en retard",
+  );
+
+  const history = app.$("#loans-list").textContent;
+
+  assertIncludes(history, "Catan");
+  assertIncludes(history, "Camille");
+  assertIncludes(history, "En retard");
+});
+
+// FEAT-05 : Vérifier qu'un emprunt non rendu reste "En cours".
+test("an active loan shows En cours", async () => {
+  const loan = {
+    id: "l3",
+    gameID: "g1",
+    memberID: "m1",
+    borrowedAt: "2099-01-01T10:00:00Z",
+    dueAt: "2099-01-15T10:00:00Z",
+    returnedAt: null,
+  };
+
+  const app = await mountApp(
+    {
+      "GET /loans": [loan],
+      "GET /games": [catan],
+      "GET /members": [camille],
+    },
+    { hash: "#loans" },
+  );
+
+  await waitFor(() => app.$$("#loans-list .row").length === 1);
+
+  assertIncludes(app.$("#loans-list").textContent, "En cours");
 });

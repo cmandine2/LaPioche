@@ -5,6 +5,34 @@ struct LoanController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let loans = routes.grouped("loans")
         loans.post(use: create)
+        // FEAT-03 : Ajouter la route permettant de rendre un jeu emprunté.
+        loans.post(":loanID", "return", use: returnGame)
+        // EXTRA-01 : Consulter l'historique des emprunts.
+        loans.get(use: index)
+        // FEAT-05 : Consulter les emprunts en retard.
+        loans.get("overdue", use: overdue)
+    }
+
+    // EXTRA-01 : Récupérer tous les emprunts, du plus récent au plus ancien.
+    @Sendable
+    func index(req: Request) async throws -> [LoanDTO] {
+        let loans = try await Loan.query(on: req.db)
+            .sort(\.$borrowedAt, .descending)
+            .all()
+
+        return loans.map { $0.toDTO() }
+    }
+
+    // FEAT-05 : Récupérer les emprunts non rendus dont la date limite est dépassée.
+    @Sendable
+    func overdue(req: Request) async throws -> [LoanDTO] {
+        let loans = try await Loan.query(on: req.db)
+            .filter(\.$returnedAt == nil)
+            .filter(\.$dueAt < Date())
+            .sort(\.$dueAt, .ascending)
+            .all()
+
+        return loans.map { $0.toDTO() }
     }
 
     @Sendable
@@ -18,6 +46,16 @@ struct LoanController: RouteCollection {
             throw Abort(.notFound, reason: "Member not found")
         }
 
+        // BUG-03 : Empêcher un nouvel emprunt si le jeu est déjà emprunté.
+        let activeLoan = try await Loan.query(on: req.db)
+            .filter(\.$game.$id == dto.gameID)
+            .filter(\.$returnedAt == nil)
+            .first()
+
+        guard activeLoan == nil else {
+            throw Abort(.conflict, reason: "Game already on loan")
+        }
+
         let now = Date()
         let loan = Loan(
             gameID: try game.requireID(),
@@ -27,5 +65,22 @@ struct LoanController: RouteCollection {
         )
         try await loan.save(on: req.db)
         return try await loan.toDTO().encodeResponse(status: .created, for: req)
+    }
+
+    // FEAT-03 : Enregistrer le retour d'un jeu et le rendre disponible.
+    @Sendable
+    func returnGame(req: Request) async throws -> LoanDTO {
+        guard let loanID = req.parameters.get("loanID", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid loan id")
+        }
+        guard let loan = try await Loan.find(loanID, on: req.db) else {
+            throw Abort(.notFound, reason: "Loan not found")
+        }
+        guard loan.returnedAt == nil else {
+            throw Abort(.conflict, reason: "Loan is already returned")
+        }
+        loan.returnedAt = Date()
+        try await loan.save(on: req.db)
+        return loan.toDTO()
     }
 }
